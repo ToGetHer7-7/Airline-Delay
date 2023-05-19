@@ -1,0 +1,646 @@
+---
+title: "Airline on-time Performance Data Analysis"
+Student Registration Number: 200660891
+output: html_document
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+```
+**Please clear the objects from the workspace and import the data again for each question**
+# Import Libraries
+```{r}
+library(dplyr)
+library(tidyr)
+library(readr)
+library(igraph)
+library(ggplot2)
+library(tidyverse)
+library("RColorBrewer")
+colours<-brewer.pal(n = 12, name = 'Paired')
+```
+
+
+# Import the Dataset
+```{r}
+df2005 <- read.csv("E:/UOL_semester_2/programming_of_data_science/Individual_Assessment/2004_2006Datasource/2005.csv")
+df2006 <- read.csv("E:/UOL_semester_2/programming_of_data_science/Individual_Assessment/2004_2006Datasource/2006.csv")
+```
+
+# Combine the 2005 and 2006 Datasets
+```{r}
+combined_flight_data <- df2005 %>%
+  full_join(df2006)
+
+# Print the first 10 rows of the combined dataset.
+print(combined_flight_data)
+```
+The combined datasets has a total of 29 columns and 14269845 rows.
+
+# Data Cleaning
+Obtain a concise summary of the DataFrame.
+```{r}
+str(combined_flight_data)
+```
+
+## Drop Duplicate Rows
+```{r}
+combined_flight_data <- combined_flight_data %>% distinct()
+
+combined_flight_data
+```
+
+## Handle the Null Values
+```{r}
+na_flight_data <- sum(is.na(combined_flight_data))
+
+na_flight_data
+```
+There are a total of [**1680158 NA values**]{.ul} in the dataset.
+
+Replace the null values with 0.
+```{r}
+combined_flight_data[is.na(combined_flight_data)] = 0
+```
+
+Check null values.
+```{r}
+sum(is.na(combined_flight_data))
+```
+All the null values have been successfully replaced with 0.
+
+## Rename the Airline Codes
+```{r}
+# Rename the airline codes with the full name of the airlines for better view.
+combined_flight_data$UniqueCarrier[combined_flight_data$UniqueCarrier == "UA"] <- "United Airlines"
+combined_flight_data$UniqueCarrier[combined_flight_data$UniqueCarrier == "US"] <- "United States Airlines"
+combined_flight_data$UniqueCarrier[combined_flight_data$UniqueCarrier == "WN"] <- "Southwest Airlines"
+combined_flight_data$UniqueCarrier[combined_flight_data$UniqueCarrier == "NW"] <- "Northwest Airlines"
+combined_flight_data$UniqueCarrier[combined_flight_data$UniqueCarrier == "OH"] <- "PSA Airlines"
+combined_flight_data$UniqueCarrier[combined_flight_data$UniqueCarrier == "OO"] <- "SkyWest Airlines"
+combined_flight_data$UniqueCarrier[combined_flight_data$UniqueCarrier == "XE"] <- "Expressjet Airlines"
+combined_flight_data$UniqueCarrier[combined_flight_data$UniqueCarrier == "TZ"] <- "Air Tazania Airlines"
+combined_flight_data$UniqueCarrier[combined_flight_data$UniqueCarrier == "DL"] <- "Delta Airlines"
+combined_flight_data$UniqueCarrier[combined_flight_data$UniqueCarrier == "EV"] <- "Atlantic Southeast Airlines"
+combined_flight_data$UniqueCarrier[combined_flight_data$UniqueCarrier == "FL"] <- "Florida Airlines"
+combined_flight_data$UniqueCarrier[combined_flight_data$UniqueCarrier == "HA"] <- "Hawaiian Airlines"
+combined_flight_data$UniqueCarrier[combined_flight_data$UniqueCarrier == "HP"] <- "America West Airlines"
+combined_flight_data$UniqueCarrier[combined_flight_data$UniqueCarrier == "MQ"] <- "Envoy Airlines"
+combined_flight_data$UniqueCarrier[combined_flight_data$UniqueCarrier == "AA"] <- "American Airlines"
+combined_flight_data$UniqueCarrier[combined_flight_data$UniqueCarrier == "AS"] <- "Alaska Airlines"
+combined_flight_data$UniqueCarrier[combined_flight_data$UniqueCarrier == "B6"] <- "Jetblue Airlines"
+combined_flight_data$UniqueCarrier[combined_flight_data$UniqueCarrier == "CO"] <- "Continental Airlines"
+combined_flight_data$UniqueCarrier[combined_flight_data$UniqueCarrier == "DH"] <- "Independence Airlines"
+combined_flight_data$UniqueCarrier[combined_flight_data$UniqueCarrier == "F9"] <- "Frontier Airlines"
+
+combined_flight_data
+```
+
+
+```{r}
+cleaned_combined_flight_data <- combined_flight_data
+
+cleaned_combined_flight_data
+```
+The basic data wrangling has been done.We will use df_Question in the following problem solution !
+
+
+# Exploratory Data Analysis
+
+## Identify the Best Fly Time that Minimise Delays
+Answering Question 1: When is the best time of day, day of the week, and time of year to fly to minimise delays?
+```{r}
+df_Question <- cleaned_combined_flight_data
+```
+
+```{r}
+# Delete unnecessary columns.
+df_Q1 <- cleaned_combined_flight_data %>% select(-FlightNum, -Distance, -Cancelled, -Diverted, -ActualElapsedTime, -CRSElapsedTime, -TaxiIn, -TaxiOut)
+
+df_Q1
+```
+
+According to the commonly used “the 15-minute rule” in the aviation sector, if the flights arrives on stand within 15
+minutes of its scheduled arrival time, it is still considered “on-time”. Thus, we will consider the ArrDelay column data > 15 mins for the flight delay.
+
+Best time of day:
+```{r}
+# Add a 24-hour clock format column.
+df_Q1_A <- df_Q1 %>% mutate(NewTimeFormat = case_when(
+  DepTime >= 0 & DepTime < 100 ~ '00:00',
+  DepTime >= 100 & DepTime < 200 ~ '01:00',
+  DepTime >= 200 & DepTime < 300 ~ '02:00',
+  DepTime >= 300 & DepTime < 400 ~ '03:00',
+  DepTime >= 400 & DepTime < 500 ~ '04:00',
+  DepTime >= 500 & DepTime < 600 ~ '05:00',
+  DepTime >= 600 & DepTime < 700 ~ '06:00',
+  DepTime >= 700 & DepTime < 800 ~ '07:00',
+  DepTime >= 800 & DepTime < 900 ~ '08:00',
+  DepTime >= 900 & DepTime < 1000 ~ '09:00',
+  DepTime >= 1000 & DepTime < 1100 ~ '10:00',
+  DepTime >= 1100 & DepTime < 1200 ~ '11:00',
+  DepTime >= 1200 & DepTime < 1300 ~ '12:00',
+  DepTime >= 1300 & DepTime < 1400 ~ '13:00',
+  DepTime >= 1400 & DepTime < 1500 ~ '14:00',
+  DepTime >= 1500 & DepTime < 1600 ~ '15:00',
+  DepTime >= 1600 & DepTime < 1700 ~ '16:00',
+  DepTime >= 1700 & DepTime < 1800 ~ '17:00',
+  DepTime >= 1800 & DepTime < 1900 ~ '18:00',
+  DepTime >= 1900 & DepTime < 2000 ~ '19:00',
+  DepTime >= 2000 & DepTime < 2100 ~ '20:00',
+  DepTime >= 2100 & DepTime < 2200 ~ '21:00',
+  DepTime >= 2200 & DepTime < 2300 ~ '22:00',
+  DepTime >= 2300 & DepTime < 2400 ~ '23:00',
+  TRUE ~ "2300"
+))
+```
+
+```{r}
+best_time_of_day <- df_Q1_A %>% group_by(NewTimeFormat) %>% summarise(sum_minutes = sum(DepDelay))
+
+best_time_of_day
+```
+
+Display the variation of delay time at different times of the days in a week.
+```{r}
+best_time_of_day %>% ggplot(aes(x = NewTimeFormat, y = sum_minutes, group = 1)) + 
+                     geom_line() + 
+                     theme(axis.text.x = element_text(angle = 90, hjust = 0.5, vjust = 0.5)) +                      theme(text = element_text(size=12)) +
+                     labs(title = "Total Delays Based on Time of Day", x = "Time of Day", y = "Total Delay in Minutes")
+```
+It is clear that the best time of the day to avoid delays would be between [**5:00 A.M. to 6:00 A.M.`**]{.ul}.
+
+Best day of a week:
+```{r}
+# Beautify the numerical data.
+best_day_of_week <- df_Q1 %>% group_by(DayOfWeek) %>% summarise(mean = mean(DepDelay))
+
+best_day_of_week
+```
+
+```{r}
+
+best_day_of_week <- best_day_of_week %>% mutate(DayOfWeek = case_when(
+  DayOfWeek == 1 ~ 'Monday',
+  DayOfWeek == 2 ~ 'Tuesday',
+  DayOfWeek == 3 ~ 'Wednesday',
+  DayOfWeek == 4 ~ 'Thursday',
+  DayOfWeek == 5 ~ 'Friday',
+  DayOfWeek == 6 ~ 'Saturday',
+  DayOfWeek == 7 ~ "Sunday",
+  TRUE ~ "Sunday"))
+
+best_day_of_week
+```
+
+Display the variation of delay time for different days in a week.
+```{r}
+day_of_week<- c("Monday","Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
+
+best_day_of_week %>% ggplot(aes(x = factor(DayOfWeek, level = day_of_week), y = mean, group = 1)) + geom_line() + labs(title = "Total Delay Minutes Based on Day of Week", x = "Day of Week", y = "Total Delay Minutes") + theme(text = element_text(size = 12)) + theme(axis.text.x = element_text(hjust = 0.5, vjust = 2))
+```
+Delays occurring on both Tuesday and Saturday are deemed satisfactory, with a minimal accumulation of delay minutes. The most opportune moment to circumvent delays is during Tuesday, as it boasts the least amount of delay minutes.# Group and calculate the sum of the given columns for each group.
+
+Best day of month:
+```{r}
+best_day_of_month <- df_Q1 %>% group_by(DayofMonth) %>% summarise(average_minutes = mean(DepDelay))
+
+best_day_of_month
+```
+
+Display the variation of delay time for different days of the month.
+```{r}
+day_of_month <- c(1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31)
+
+best_day_of_month %>% ggplot(aes(x = factor(DayofMonth, level = day_of_month), y = average_minutes, group = 1)) + geom_line() + labs(title = "Total Delay Minutes Based on Day of Month", x = "Day of Month", y = "Total Delay Minutes") + theme(axis.text.x = element_text(hjust = 0.5, vjust = 0.5)) + theme(text = element_text(size = 12))
+```
+February lacks a 29–31-day interval in every leap year, and four months exclude the 31st day. However, there are seven months that have 31 days, which means that using the mean is a more precise method than using the sum to describe the data. The most opportune day of the month is the 4th, and the delay time before 15th is typically lower than after 15th of a month, making it an ideal time for traveling. Although there is no apparent pattern or trend, the average delay time during the initial fortnight of the month is generally lower than in the latter half.
+
+Best month of year:
+```{r}
+# Beautify the numerical data.
+best_month_of_year <- df_Q1 %>% group_by(Month) %>% summarise(average_minutes = mean(DepDelay))
+
+best_month_of_year
+```
+
+
+```{r}
+best_month_of_year <- best_month_of_year %>% mutate(Month = case_when(
+                     Month == 1 ~ "January",
+                     Month == 2 ~ "February",
+                     Month == 3 ~ "March",
+                     Month == 4 ~ "April",
+                     Month == 5 ~ "May",
+                     Month == 6 ~ "June",
+                     Month == 7 ~ "July",
+                     Month == 8 ~ "August",
+                     Month == 9 ~ "September",
+                     Month == 10 ~ "October",
+                     Month == 11 ~ "November",
+                     TRUE ~ "December"
+))
+
+best_month_of_year
+```
+
+Display the variation of delay time for different months in a year.
+```{r}
+month_of_year = c("January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December")
+
+best_month_of_year %>% ggplot(aes(x = factor(Month, level = month_of_year), y = average_minutes, group = 1)) + geom_line() + theme(axis.text.x = element_text(angle = 45, hjust = 0.8), text = element_text(size=13)) + labs(title = "Best Month of The Year to Avoid Delays", x = "Month of the Year", y = "Total Delay Minutes")
+```
+The mean delay minutes of April, May ,and September are lower than 7 mins. The best month of year is April.It also demonstrates the middle and end of the year have high average delay time.
+
+
+## Correlation Analysis between Aircraft Age and Delays
+Answering Question 2: Do older planes suffer more delays?
+
+Import the Dataset
+```{r}
+df_Q2 <-df_Question
+airports <- read.csv("E:/UOL_semester_2/programming_of_data_science/Individual_Assessment/2004_2006Datasource/Complementary infomation/airports.csv", header = TRUE)
+planes <- read.csv("E:/UOL_semester_2/programming_of_data_science/Individual_Assessment/2004_2006Datasource/Complementary infomation/plane-data.csv", header = TRUE) %>% rename(TailNum = tailnum, ManufactureYear=year)
+```
+
+Data Summary
+```{r}
+str(df_Q2)
+str(planes)
+str(planes)
+summary(df_Q2)
+```
+
+Clean the missing values in the ArrDelay column and create a new variable to indicate delays.
+```{r}
+df_Q2 <- df_Q2 %>%
+  filter(!is.na(ArrDelay)) %>%
+  mutate(ADelay = case_when(
+    ArrDelay<15 ~ '0',
+    ArrDelay>=15 ~ '1')
+    )
+```
+In the aviation industry, the "15-minute rule" stipulates that a flight is considered "on time" if it arrives within a few minutes of the scheduled arrival time. If the flight is delayed for more than 15 minutes, it is considered "delayed". According to real world situation, a reasonable tolerance rule can enhance the analysis and comprehension of the airline on-time performance.
+
+Data Wrangling
+```{r}
+planes$ManufactureYear <- as.integer(planes$ManufactureYear)
+
+df_planes <- left_join(df_Q2, planes) %>%
+  select(Year,TailNum, ManufactureYear, ADelay) %>%
+  filter(!is.na(ManufactureYear), ManufactureYear!=0) %>%
+  mutate(PlaneAge = as.integer(Year-ManufactureYear)) %>%
+  filter(!is.na(PlaneAge), PlaneAge>=0)
+```
+
+Find the pairwise correlation of the plane age and delay percentage columns.
+```{r}
+plt1 <- df_planes %>%
+  count(PlaneAge, ADelay) %>%       
+  group_by(PlaneAge) %>%
+  mutate(pct = prop.table(n) * 100) %>%
+  filter(ADelay==1)
+
+cor.test(plt1$PlaneAge, plt1$pct, alternative='two.sided')
+```
+The correlation coefficient is close to -0.3 demonstrates there is negative weak linear correlation !
+
+
+Display graphs about the plane age and delays.
+```{r}
+plt1 %>%
+  ggplot() + aes(PlaneAge, pct) + geom_line(colour=colours[6]) +
+  labs(title = "Plane Age versus Delay", x = "Plane Age", y = "Delay Percentage") +
+  scale_y_continuous(labels = function(x) paste0(x, "%")) +
+  theme_bw()
+```
+
+```{r}
+library(reshape2)
+
+plt2 <- df_planes %>%
+  count(PlaneAge, ADelay) %>%
+  dcast(formula = PlaneAge ~ ADelay, value.var = 'n')
+plt2['Difference'] <-  plt2$`0`- plt2$`1`
+plt2['Total'] <-  plt2$`0`+ plt2$`1`
+
+ggplot(plt2) + aes(x = PlaneAge) + 
+  geom_bar(aes(y = Total/1000), stat = "identity", alpha = 0.3, fill='#7c5295') +
+  geom_bar(aes(y = Difference/1000), stat = "identity", fill = "#0D5BE1")+ 
+  labs(title = "Difference in flights Without Delays and With Delays", x = "Plane Age", y = "Difference in Flights") +
+  scale_y_continuous(breaks = seq(0,1400,200), labels = function(x) paste0(x, "K")) +
+  theme_bw()
+```
+The delay rate for aircraft aged between 10-25 years experiences minor fluctuations, and the overall delay rate stands at 21%. Conversely, for aircraft aged 25-30 years, the overall delay rate increases to 23%, and fluctuations become more pronounced. The fluctuation range is substantial for planes over 30 years old; nevertheless, the overall delay rate remains steady at around 20%-21%.
+
+Additionally, the bar graph shows the total number of flights for each age (represented by the red bar) and the difference between the number of delayed and non-delayed flights (represented by the green bar). Clearly, aircraft between 0 and 10 years old perform better than older aircraft. Aircraft are between 10-20 years old. The age of aircraft is 10-20 years, and the average annual number of aircraft is 180,000. In terms of the number of aircraft, there is sufficient data to ensure the accuracy of the delay rate before the age of 22-year-old aircraft. However, the data for aircraft aged 22 and above is insufficient, and there is a certain chance, which leads to the accuracy of the data after the age of 22 aircraft decrease, making it difficult to draw any conclusive relationship between aircraft age and percentage delays. Based on the graph, it is reasonable to assume that older aircraft experience more frequent delays.
+
+
+## Changes in the Number of Passengers on Different Routes
+Answering Question 3: How does the number of people flying between different locations change over time?
+
+Merge and group the DataFrame to get the cities for flights origins and destinations.
+```{r}
+df_Q3 <- df_Question %>%
+  select(Year, Origin, Dest) %>%
+  left_join(airports, by = c("Origin" = "iata")) %>% rename('OriginCity'='city') %>%
+  left_join(airports, by = c("Dest" = "iata")) %>% rename('DestCity'='city') %>%
+  select(Year, OriginCity, DestCity) %>%
+  group_by(Year, OriginCity, DestCity) %>%
+  summarise(Freq = n())
+```
+
+
+Obtain the top 10 air routes in 2005.
+```{r}
+df2005 <- df_Q3[df_Q3$Year==2005,] %>% arrange(desc(Freq)) %>%
+  mutate(Route = paste0(OriginCity, ' to ', DestCity)) %>%
+  head(10)
+df2005
+```
+
+
+Find records in 2006 that match with the top 10 air routes in 2005.
+```{r}
+df2006 <- df_Q3[df_Q3$Year==2006,] %>%
+  mutate(Route = paste0(OriginCity, ' to ', DestCity)) %>%
+  filter(Route %in% df2006$Route) %>%
+  arrange(desc(Freq))
+```
+
+Display a grouped bar chart to see the number of flights between different cities.
+```{r}
+DF <- bind_rows(df2005, df2006)
+ggplot(DF, aes(fill=as.character(Year), y=Freq, x=reorder(Route, -Freq))) + 
+  geom_bar(position="dodge", stat="identity", alpha = 0.9) +
+  labs(title = "Number of Flights between Different Locations", y = "Number of Flights", x = "Top 10 Travels in 2005") +
+  scale_fill_manual("Year", values = c('#5173DB', '#F7C003', '#6A6A68')) +
+  theme_bw() +
+  theme(axis.text.x=element_text(angle=45, hjust=0.95)) 
+```
+The histogram displays the leading 10 air travel routes in 2005, whereas the grouped bars illustrate the count of flights for the top 10 frequent air routes in 2005, and the changes in 2006. It is evident that the air travel route between Boston and New York had the maximum number of flights in both years. There was an increment in the number of flights between Boston and New York, as well as between Arlington and New York. However, there was a decrease in the number of flights between Chicago and Minneapolis, New York and Chicago, Los Angeles and San Diego, as well as Chicago and Minneapolis in 2006.
+
+
+## Cascading Failures Detection
+Answering Question 4: Can you detect cascading failures as delays in one airport create delays in others?
+```{r}
+df_Question
+```
+
+Drop unnecessary columns for the question.
+```{r}
+df_Q4 <- df_Question %>% select(-CancellationCode, -Cancelled, -CarrierDelay, -WeatherDelay, -NASDelay, -SecurityDelay, - LateAircraftDelay, -Diverted, -TaxiIn, -TaxiOut, -Distance, -AirTime, -ActualElapsedTime, -CRSElapsedTime, -FlightNum, -Diverted)
+
+df_Q4
+```
+
+Rank Airlines by delay time.
+```{r}
+df_Q4 %>% group_by(UniqueCarrier) %>% summarise(sum_minutes = sum(DepDelay)) %>% arrange(desc(sum_minutes))
+```
+
+A few examples will be provided to demonstrate how a delayed departure at the origin airport can result in subsequent delays at other destination airports.
+
+```{r}
+# Subsetting United Airlines rows.
+United_Airlines_delays <- df_Q4 %>% 
+                            filter(UniqueCarrier == "United Airlines" & DepDelay > 15)
+```
+
+We will use some examples to illustrate how a departure delay in the origin airport will continue to create delays in other destination airports.
+
+Example 1
+```{r}
+# Choose a random row.
+United_Airlines_delays[c(1), ]
+```
+Observing the flight schedule for Tail Number N904UA, it was scheduled to depart from ORD at 15:45 but encountered a delay of 78 minutes and took off at 17:03. Its intended arrival time at STL was 18:58, but it arrived later than scheduled at 19:57, causing a delay of 59 minutes. The flight experienced a delay of 54 minutes after takeoff.
+
+```{r}
+# Find information about the connected flights.
+eg_1 <- United_Airlines_delays %>% filter(Origin == United_Airlines_delays[c(1), "Dest"] & TailNum == United_Airlines_delays[c(1), "TailNum"]) 
+
+eg_1[c(1),]
+```
+Observing the same flight schedule for Tail Number N904UA, it was scheduled to depart from STL at 13:59 but encountered a delay of 9 minutes and took off at 14:08. Its intended arrival time at ORD was 15:15, but it arrived later than scheduled at 16:18, causing a delay of 63 minutes. The flight experienced a delay of 54 minutes after takeoff.
+
+Example 2
+```{r}
+# Choose a random row.
+United_Airlines_delays[c(3), ]
+```
+Observing the flight schedule for Tail Number N904UA, it was scheduled to depart from DEN at 18:40 but encountered a delay of 50 minutes and took off at 19:30. Its intended arrival time at MSY was 22:09, but it arrived later than scheduled at 22:47, causing a delay of 38 minutes. The flight experienced a delay of -12 minutes after takeoff.
+
+```{r}
+# Find information about the connected flights.
+eg_2 <- United_Airlines_delays %>% filter(Origin == United_Airlines_delays[c(3), "Dest"] & TailNum == United_Airlines_delays[c(3), "TailNum"])
+
+eg_2[c(3),]
+```
+Observing the same flight schedule for Tail Number N438UA, it was scheduled to depart from MSY at 14:30 but encountered a delay of 2 minutes and took off at 14:32. Its intended arrival time at DEN was 16:19	, but it arrived later than scheduled at 16:22, causing a delay of 3 minutes. The flight experienced a delay of 5 minutes after takeoff.
+
+## Flight Delay Prediction
+Answering Question 5: Use the available variables to construct a model that predicts delays.
+
+Import Machine Learning related libraries.
+```{r echo = TRUE, results = 'hide'}
+
+library(mlr3)
+library(mlr3learners)
+library(mlr3pipelines)
+library(mlr3tuning)
+library(mlr3viz)
+library(paradox)
+library(tidyr)
+```
+
+```{r}
+df_Q5 <- df_Question
+```
+
+Data Preprocessing
+```{r}
+# Delete the rows containing missing values.
+df_Q5 <- df_Q5 %>%
+  left_join(planes) %>%
+  mutate(Arr_Delay = case_when(
+    ArrDelay<15 ~ '0',
+    ArrDelay>=15 ~ '1'))
+df_Q5$ManufactureYear <- as.integer(df_Q5$ManufactureYear)
+df_Q5 <- df_Q5 %>% drop_na()
+```
+
+```{r}
+# Take a subset of 100000 records from the dataset to build model.
+set.seed(10)
+df_Q5 <- sample_n(df_Q5, 100000)
+```
+
+```{r}
+# Convert the variables to factors.
+df_Q5$Arr_Delay <- factor(df_Q5$Arr_Delay)
+df_Q5$Month <- factor(df_Q5$Month)
+df_Q5$DayofMonth <- factor(df_Q5$DayofMonth)
+df_Q5$UniqueCarrier <- factor(df_Q5$UniqueCarrier)
+```
+
+
+```{r}
+# Split the dataset into a training set and a testing set.
+n <- nrow(df_Q5)
+train_set <- sample(n, round(0.7*n))
+test_set <- setdiff(1:n, train_set)
+```
+
+```{r}
+# Check the importance of the independent variables.
+task_importance <- TaskClassif$new('Flight_Delay_Importance', backend=df_Q5, target='Arr_Delay')
+task_importance$select(c('Month','DayofMonth','DayOfWeek','CRSDepTime', 'DepTime', 'CRSArrTime','CRSElapsedTime','UniqueCarrier', 'Distance','DepDelay'))
+```
+
+Use random forest to rank the importance of the independent variables.
+```{r}
+learner_rf <- lrn('classif.ranger', importance='permutation', predict_type='prob')
+learner_rf$train(task_importance, row_ids=train_set)
+
+importance <- as.data.table(learner_rf$importance(), keep.rownames = T)
+colnames(importance) <- c('Feature','Importance')
+
+ggplot(data=importance, aes(x=reorder(Feature,Importance), y=Importance)) +
+  geom_col() + coord_flip() + xlab("") + theme_bw()
+```
+
+```{r}
+# Convert factors to numerical values.
+fencoder <- po("encode", method = "treatment",
+  affect_columns = selector_type("factor"))
+ord_to_int <- po("colapply", applicator = as.integer,
+  affect_columns = selector_type("ordered"))
+```
+
+```{r}
+# Tuning hyperparameters.
+tuner <- tnr('grid_search')
+terminator <- trm('evals', n_evals = 10)
+```
+
+```{r}
+# model building task
+task <- TaskClassif$new('Flight_Delay', backend=df_Q5, target = 'Arr_Delay')
+task$select(c('CRSDepTime', 'DepTime', 'CRSArrTime','CRSElapsedTime','Distance','UniqueCarrier','DepDelay'))
+measure <- msr('classif.ce')
+```
+
+Logistic Regression Model
+```{r}
+learner_lr <- lrn("classif.log_reg", predict_type='prob')
+glrn_lr <- GraphLearner$new(learner_lr)
+
+glrn_lr$train(task, row_ids = train_set)
+glrn_lr$predict(task, row_ids = test_set)$score() 
+```
+
+Penalised Logistic Regression Model
+```{r echo = TRUE, results = 'hide'}
+learner_plr <- lrn('classif.glmnet', predict_type='prob') 
+gc_plr <- po('scale') %>>% 
+  fencoder %>>% ord_to_int %>>%
+  po(learner_plr)
+glrn_plr <- GraphLearner$new(gc_plr)
+tune_lambda <- ParamSet$new (list(
+ ParamDbl$new('classif.glmnet.lambda', lower = 0.001, upper = 2)
+))
+
+at_plr <- AutoTuner$new(
+  learner = glrn_plr,
+  resampling = rsmp('cv', folds = 3),
+  measure = measure,
+  search_space = tune_lambda,
+  terminator = terminator,
+  tuner = tuner
+)
+at_plr$train(task, row_ids = train_set)
+```
+```{r}
+at_plr$predict(task, row_ids = test_set)$score()
+```
+
+Gradient Boosting Model
+```{r}
+learner_gb <- lrn("classif.xgboost", predict_type='prob')
+gc_gb <- fencoder %>>% ord_to_int %>>%
+  po(learner_gb)
+glrn_gb <- GraphLearner$new(gc_gb)
+
+glrn_gb$train(task, row_ids = train_set)
+```
+
+```{r}
+glrn_gb$predict(task, row_ids = test_set)$score() 
+```
+
+Decision Tree Model
+```{r}
+learner_tree <- lrn("classif.rpart", predict_type='prob')
+glrn_tree <- GraphLearner$new(learner_tree)
+
+glrn_tree$train(task, row_ids = train_set)
+glrn_tree$predict(task, row_ids = test_set)$score() 
+```
+
+Random Forest Model
+```{r echo = TRUE, results = 'hide'}
+learner_rf <- lrn('classif.ranger', predict_type='prob') 
+learner_rf$param_set$values <- list(min.node.size = 4)
+gc_rf <- po('scale') %>>%
+  po(learner_rf)
+glrn_rf <- GraphLearner$new(gc_rf)
+tune_ntrees <- ParamSet$new (list(
+ ParamInt$new('classif.ranger.num.trees', lower = 50, upper = 600)
+))
+at_rf <- AutoTuner$new(
+  learner = glrn_rf,
+  resampling = rsmp('cv', folds = 3),
+  measure = measure,
+  search_space = tune_ntrees,
+  terminator = terminator,
+  tuner = tuner
+)
+at_rf$train(task, row_ids = train_set)
+```
+```{r}
+at_rf$predict(task, row_ids = test_set)$score()
+```
+
+Compare model performance.
+```{r results = 'hide'}
+set.seed(1)
+lrn_list <- list(
+  glrn_lr,
+  glrn_gb,
+  at_plr,
+  glrn_tree,
+  at_rf
+)
+
+bm_design <- benchmark_grid(task = task, resamplings = rsmp('cv', folds = 3), learners = lrn_list)
+bmr <- benchmark(bm_design, store_models = TRUE)
+```
+```{r}
+autoplot(bmr) + 
+  labs(title = "Model Comparision", y = "Classification Error") +
+  scale_x_discrete(labels= c("Logistic Regression", "Random Forest","Penalised Logistic Regression","Gradient Boosting", "Classification Trees")) + 
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 40, hjust = 1))
+```
+
+```{r}
+autoplot(bmr, type='roc', print.auc=T) + labs(x = "False Positive Rate", y = "True Positive Rate") +
+    scale_color_manual(labels=c("Logistic Regression","Gradient Boosting","Penalised Logistic Regression", "Classification Trees", "Random Forest"), values=colours[c(2,4,6,8,10)])
+```
+
+```{r}
+measures <- msrs(c("classif.ce", "classif.auc"))
+bmr$aggregate(measures)
+```
+The Gradient Boosting Model could achieve an accuracy rate of around 91.9%, which is considered as very good accuracy. The gradient boosting model,Logistic Regression model and Penalised Logistic Regression Model could achieve accuracy rates of around 91.7%, which is lower than the Gradient Boosting Model. Thus, we should choose the Gradient Boosting Model  to predict the delays. The Mean Squared Error of the Gradient Boosting Model is 0.083 and the R-squared of the model is 0.489 which means 48.9% data can be interpreted through Gradient Boosting Model.
+
